@@ -1,6 +1,4 @@
 import torch
-from torch import nn
-from transformers import pipeline
 from transformers.models.bert import BertConfig, BertTokenizer
 from transformers.models.bert import BertForPreTraining as BertModel
 

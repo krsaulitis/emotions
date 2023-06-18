@@ -1,3 +1,4 @@
 .idea
 /env
-/models/lv_bert/pytorch_model.bin
+/models
+/wandb

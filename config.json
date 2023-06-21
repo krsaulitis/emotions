@@ -1,26 +1,20 @@
 [
   {
+    "project_name": "emotion-bert-en",
     "model_name": "emotion-bert-en",
-    "data_dir": "data/en",
+    "description": "Suggested parameters with AdamW",
+    "data_dir": "data",
+    "data_lang": "en",
     "base_model": "bert-base-cased",
+    "base_model_vocab": "bert-base-cased",
     "optimizer": "AdamW",
-    "weight_decay": 0.0,
+    "weight_decay": 0.01,
     "warmup": 0.1,
-    "epochs": 10,
-    "batch_size": 32,
-    "learning_rate": 1e-5,
-    "seed": 42
-  },
-  {
-    "model_name": "emotion-bert-en",
-    "data_dir": "data/en",
-    "base_model": "bert-base-cased",
-    "optimizer": "AdamW",
-    "weight_decay": 0.0,
-    "warmup": 0.1,
-    "epochs": 10,
-    "batch_size": 32,
-    "learning_rate": 1e-5,
+    "epochs": 5,
+    "batch_size": 16,
+    "max_len": 64,
+    "learning_rate": 5e-5,
+    "classifier_dropout": 0.2,
     "seed": 42
   }
 ]

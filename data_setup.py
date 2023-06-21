@@ -1,14 +1,15 @@
 import torch
 import transformers
 from torch.utils.data import Dataset, DataLoader
+from config import Config
 
 
 class GoEmotionsDataset(Dataset):
-    def __init__(self, path, max_len, class_path, tokenizer):
+    def __init__(self, path: str, class_path: str, max_len: int, tokenizer):
         super().__init__()
 
-        self.max_len = max_len
         self.class_path = class_path
+        self.max_len = max_len
         self.tokenizer = tokenizer
 
         self.sentences = []
@@ -33,8 +34,9 @@ class GoEmotionsDataset(Dataset):
         sentence = self.sentences[index]
         labels = self.labels[index]
 
-        sentence = sentence.replace("[NAME]", "[unused1]")
-        sentence = sentence.replace("[RELIGION]", "[unused2]")
+        # Not used as LV pre-trained model does not support this
+        # sentence = sentence.replace("[NAME]", "[unused1]")
+        # sentence = sentence.replace("[RELIGION]", "[unused2]")
 
         # Preprocess the text to be suitable for BERT
         tokens = self.tokenizer.tokenize(sentence)
@@ -61,19 +63,19 @@ def create_dataloaders(
         train_path: str,
         test_path: str,
         class_path: str,
-        batch_size: int,
+        config: Config,
         num_workers: int = 0,
-        max_len: int = 128,
 ):
-    tokenizer = transformers.BertTokenizer.from_pretrained('bert-base-cased')
-    tokenizer.add_special_tokens({"additional_special_tokens": ["[unused1]", "[unused2]"]})
+    tokenizer = transformers.BertTokenizer.from_pretrained(config.base_model_vocab)
+    # Not used as LV pre-trained model does not support this
+    # tokenizer.add_special_tokens({"additional_special_tokens": ["[unused1]", "[unused2]"]})
 
-    train_data = GoEmotionsDataset(train_path, max_len, class_path, tokenizer)
-    test_data = GoEmotionsDataset(test_path, max_len, class_path, tokenizer)
+    train_data = GoEmotionsDataset(train_path, class_path, config.max_len, tokenizer)
+    test_data = GoEmotionsDataset(test_path, class_path, config.max_len, tokenizer)
 
     train_dataloader = DataLoader(
         dataset=train_data,
-        batch_size=batch_size,
+        batch_size=config.batch_size,
         shuffle=True,
         num_workers=num_workers,
         pin_memory=True,
@@ -81,7 +83,7 @@ def create_dataloaders(
 
     test_dataloader = DataLoader(
         dataset=test_data,
-        batch_size=batch_size,
+        batch_size=config.batch_size,
         shuffle=False,
         num_workers=num_workers,
         pin_memory=True,

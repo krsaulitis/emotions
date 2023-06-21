@@ -2,10 +2,10 @@ import math
 import torch
 import torch.utils.data
 import helpers
-import new.config
 from tqdm.auto import tqdm
 from typing import Optional, Union
-from new.logger import MetricsLogger
+from logger import MetricsLogger
+from config import Config
 
 
 def train_step(
@@ -67,7 +67,7 @@ def test_step(
 
 def train(
         model: torch.nn.Module,
-        config: new.config.Config,
+        config: Config,
         train_dataloader: torch.utils.data.DataLoader,
         test_dataloader: torch.utils.data.DataLoader,
         loss_function: torch.nn.Module,
@@ -101,26 +101,9 @@ def train(
         test_loss = logger.get_loss('test')
         logger.log_results(epoch, train_dataloader.dataset.classes())
 
-        # classes = train_dataloader.dataset.classes()
-        # report = classification_report(test_labels, test_preds, target_names=classes, zero_division=0, output_dict=True)
-        # wandb.log(report, commit=False)
-        #
-        # metrics = {
-        #     "epoch": epoch + 1,
-        #     "train": {},
-        #     "test": {},
-        # }
-        # for name, train_metric in train_metrics.items():
-        #     metrics['train'][name] = np.mean(train_metric)
-        #
-        # for name, test_metric in test_metrics.items():
-        #     metrics['test'][name] = np.mean(test_metric)
-        #
-        # logger.log(metrics)
-
         # Stop training if test loss starts to increase
-        if test_loss > best_test_loss:
-            break
+        # if test_loss > best_test_loss:
+        #     break
 
         best_test_loss = test_loss
 

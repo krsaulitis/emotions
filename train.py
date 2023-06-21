@@ -1,147 +1,117 @@
-import torch
-import engine
+import torch.optim
 import data_setup
+import engine
 import helpers
-import wandb
 import argparse
+from config import Config
+from logger import MetricsLogger
 from torch.nn import BCEWithLogitsLoss
-# from model import EmotionBert
-from transformers import logging, get_linear_schedule_with_warmup, BertForSequenceClassification
+from transformers import logging, get_linear_schedule_with_warmup, BertForSequenceClassification, BertConfig
+from torch.optim.lr_scheduler import LRScheduler
+from typing import Union, Tuple
 
-parser = argparse.ArgumentParser()
-parser.add_argument('-d', '--data-dir', default='data/en')
-parser.add_argument('-md', '--model-dir', default='models')
-parser.add_argument('-e', '--epochs', default=5, type=int)
-parser.add_argument('-bs', '--batch-size', default=32, type=int)
-parser.add_argument('-lr', '--learning-rate', default=1e-2, type=float)
-parser.add_argument('-rn', '--run-name', default=None, type=str)
-parser.add_argument('-pn', '--project-name', default='emotion-bert', type=str)
-parser.add_argument('-mn', '--model-name', default='emotion-bert-en', type=str)
-parser.add_argument('-me', '--model-epoch', default=None, type=int)
-arguments = parser.parse_args()
-
-DATA_DIR = arguments.data_dir
-MODEL_DIR = arguments.model_dir
-EPOCHS = arguments.epochs
-BATCH_SIZE = arguments.batch_size
-LEARNING_RATE = arguments.learning_rate
-WEIGHT_DECAY = 0.05
-RUN_NAME = arguments.run_name
-PROJECT_NAME = arguments.project_name
-MODEL_NAME = arguments.model_name
-MODEL_EPOCH = arguments.model_epoch
-CLASSIFIER_DROPOUT = 0.1
-NUM_CLASSES = 28
-MAX_LEN = 64
-SEED = 42
-FORCE_CPU = True
-START_WANDB = False
-LOCK_BASE = False
-USE_SCHEDULER = True
+FORCE_CPU = False
+USE_LOGGING = True
 
 
-model_file_exists = helpers.check_file_in_dir("models", f"{MODEL_NAME}-{RUN_NAME}")
-model_exists = model_file_exists if RUN_NAME is not None else False
+def _init_model(classes_count: int, config: Config) -> Tuple[torch.nn.Module, int]:
+    logging.set_verbosity_error()
 
-if START_WANDB:
-    wandb.init(
-        # id="hfp4uqk5",
-        project=PROJECT_NAME,
-        config={
-            "learning_rate": LEARNING_RATE,
-            "weight_decay": WEIGHT_DECAY,
-            "epochs": EPOCHS,
-            "batch_size": BATCH_SIZE,
-            "max_len": MAX_LEN,
-            "num_classes": NUM_CLASSES,
-            "use_scheduler": USE_SCHEDULER,
-            "classifier_dropout": CLASSIFIER_DROPOUT,
-            "model": f"{MODEL_NAME}",
-            "optimizer": "AdamW",
-            "seed": SEED,
-        },
-        name=RUN_NAME,
-        resume=model_exists
-    )
+    if config.base_model_config:
+        model_config = BertConfig.from_json_file(config.base_model_config)
+    else:
+        model_config = BertConfig.from_pretrained(config.base_model)
 
-    RUN_NAME = wandb.run.name
+    model_config.num_labels = classes_count
+    model_config.classifier_dropout = config.classifier_dropout
 
-print(f"Project Name {PROJECT_NAME} | Run Name: {RUN_NAME} | Model Name: {MODEL_NAME} \n"
-      f"Data dir: {DATA_DIR} | Model dir: {MODEL_DIR} \n"
-      f"Epochs: {EPOCHS} | Batch size: {BATCH_SIZE} | Learning rate: {LEARNING_RATE} | Weight decay: {WEIGHT_DECAY}")
+    model = BertForSequenceClassification.from_pretrained(config.base_model, config=model_config)
 
-device = "cpu"
-if not FORCE_CPU and torch.cuda.is_available():
-    device = "cuda"
-elif not FORCE_CPU and torch.backends.mps.is_available():
-    device = "mps"
+    model_path = f"models/${config.run_name}"
+    loaded_model, epoch = helpers.load_model_w_epoch(model, model_path)
+    if loaded_model:
+        model = loaded_model
+
+    model = model.to(helpers.get_device(FORCE_CPU))
+    model.zero_grad()
+    return model, epoch
 
 
-print(f"Using {device} device")
+def _init_optim(model: torch.nn.Module, config: Config) -> torch.optim.Optimizer:
+    _optimizer = getattr(torch.optim, config.optimizer)
+    return _optimizer(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
 
-dataloader_train, dataloader_test = data_setup.create_dataloaders(
-    train_path='data/en/raw/train.tsv',
-    test_path='data/en/raw/test.tsv',
-    class_path='data/en/raw/classes',
-    batch_size=BATCH_SIZE,
-    max_len=MAX_LEN,
-)
 
-logging.set_verbosity_error()
+def _init_scheduler(optimizer: torch.optim.Optimizer, batch_count: int, config: Config) -> Union[LRScheduler, None]:
+    if not config.warmup:
+        return None
 
-model = BertForSequenceClassification.from_pretrained(
-    'bert-base-cased',
-    num_labels=NUM_CLASSES,
-    classifier_dropout=CLASSIFIER_DROPOUT,
-)
-# model = EmotionBert.from_pretrained('bert-base-uncased')
-
-if LOCK_BASE:
-    for param in model.bert.parameters():
-        param.requires_grad = False
-
-loss_function = BCEWithLogitsLoss()
-
-optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-# optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-# optimizer = torch.optim.SGD(model.parameters(), lr=LEARNING_RATE)
-
-scheduler = None
-if USE_SCHEDULER:
-    batch_count = len(dataloader_train)
-    total_steps = EPOCHS * batch_count
-    warmup_steps = int(total_steps * 0.1)
+    total_steps = config.epochs * batch_count
     scheduler = get_linear_schedule_with_warmup(
         optimizer=optimizer,
-        num_warmup_steps=warmup_steps,
+        num_warmup_steps=int(total_steps * config.warmup),
         num_training_steps=total_steps,
     )
+    scheduler_path = f"models/${config.run_name}"
+    loaded_scheduler = helpers.load_scheduler(scheduler, scheduler_path)
+    if loaded_scheduler:
+        scheduler = loaded_scheduler
 
-if model_exists:
-    model_name = f"{MODEL_NAME}-{RUN_NAME}-e{MODEL_EPOCH}"
-    model = helpers.load_model(model, MODEL_DIR, model_name)
-
-    if USE_SCHEDULER:
-        scheduler_name = f"{MODEL_NAME}-{RUN_NAME}-e{MODEL_EPOCH}-s"
-
-        if helpers.check_file_in_dir('model', scheduler_name):
-            scheduler = helpers.load_model(scheduler, MODEL_DIR, scheduler_name)
+    return scheduler
 
 
-model = model.to(device)
-model.zero_grad()
+def train(config: Config):
+    torch.manual_seed(config.seed)
+    logger = None
 
-torch.manual_seed(SEED)
+    if USE_LOGGING:
+        logger = MetricsLogger(config)
 
-engine.train(
-    model=model,
-    train_dataloader=dataloader_train,
-    test_dataloader=dataloader_test,
-    loss_fn=loss_function,
-    optimizer=optimizer,
-    scheduler=scheduler,
-    epochs=EPOCHS,
-    device=device,
-)
+    train_dataloader, test_dataloader = data_setup.create_dataloaders(
+        train_path=f"{config.data_dir}/{config.data_lang}/train.tsv",
+        test_path=f"{config.data_dir}/{config.data_lang}/test.tsv",
+        class_path=f"{config.data_dir}/classes.txt",
+        config=config,
+    )
 
-wandb.finish()
+    model, epoch = _init_model(len(train_dataloader.dataset.classes()), config)
+    optimizer = _init_optim(model, config)
+    scheduler = _init_scheduler(optimizer, len(train_dataloader), config)
+
+    engine.train(
+        model=model,
+        config=config,
+        train_dataloader=train_dataloader,
+        test_dataloader=test_dataloader,
+        loss_function=BCEWithLogitsLoss(),
+        optimizer=optimizer,
+        scheduler=scheduler,
+        device=helpers.get_device(FORCE_CPU),
+        logger=logger,
+        current_epoch=epoch,
+    )
+
+    logger.finish()
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('-pn', '--project-name', default='emotion-bert', type=str)
+    parser.add_argument('-mn', '--model-name', default='emotion-bert-en', type=str)
+    parser.add_argument('-rn', '--run-name', default=None, type=str)
+    parser.add_argument('-rid', '--run-id', default=None, type=str)
+
+    parser.add_argument('-d', '--data-dir', default='data/en')
+
+    parser.add_argument('-bm', '--base-model', default='bert-base-cased', type=str)
+    parser.add_argument('-o', '--optimizer', default='AdamW', type=str)
+    parser.add_argument('-wd', '--weight-decay', default=None, type=str)
+    parser.add_argument('-w', '--warmup', default=None, type=str)
+
+    parser.add_argument('-e', '--epochs', default=5, type=int)
+    parser.add_argument('-bs', '--batch-size', default=32, type=int)
+    parser.add_argument('-lr', '--learning-rate', default=1e-2, type=float)
+    parser.add_argument('-s', '--seed', default=42, type=int)
+
+    train(Config(**vars(parser.parse_args())))

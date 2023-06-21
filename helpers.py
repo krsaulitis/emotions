@@ -2,33 +2,13 @@ import os
 import torch
 import re
 from pathlib import Path
-from sklearn.metrics import hamming_loss, accuracy_score, f1_score
-from typing import Dict, Union
-
-
-def initialize_metrics() -> Dict:
-    return {
-        'loss': [],
-        'hamming_loss': [],
-        'accuracy': [],
-        'f1_micro': [],
-        'f1_macro': [],
-        'f1_weighted': [],
-    }
-
-
-def calculate_and_append_metrics(metrics, y, y_pred) -> Dict:
-    metrics['hamming_loss'].append(hamming_loss(y, y_pred))
-    metrics['accuracy'].append(accuracy_score(y, y_pred))
-    metrics['f1_micro'].append(f1_score(y, y_pred, average='micro', zero_division=0))
-    metrics['f1_macro'].append(f1_score(y, y_pred, average='macro', zero_division=0))
-    metrics['f1_weighted'].append(f1_score(y, y_pred, average='weighted', zero_division=0))
-
-    return metrics
+from typing import Tuple, Union
+from torch.nn import Module
+from torch.optim.lr_scheduler import LRScheduler
 
 
 def save_state(
-        obj: Union[torch.nn.Module, torch.optim.lr_scheduler],
+        obj: Union[torch.nn.Module, LRScheduler],
         target_dir: str,
         state_name: str, ):
     target_dir_path = Path(target_dir)
@@ -45,13 +25,14 @@ def save_state(
 
 
 def load_state(
-        obj: Union[torch.nn.Module, torch.optim.lr_scheduler],
+        obj: Union[torch.nn.Module, LRScheduler],
         target_dir: str,
         state_name: str,
-) -> Union[torch.nn.Module, torch.optim.lr_scheduler, None]:
+        extension: str = 'pt',
+) -> Union[torch.nn.Module, LRScheduler, None]:
     target_dir_path = Path(target_dir)
 
-    state_name = f"{state_name}.pt"
+    state_name = f"{state_name}.{extension}"
     state_path = target_dir_path / state_name
 
     if not os.path.isfile(state_path):
@@ -62,20 +43,23 @@ def load_state(
     return obj
 
 
-def load_model_w_epoch(model: torch.nn.Module, target_dir: str) -> Union[(torch.nn.Module, int), None]:
+def load_model_w_epoch(
+        model: torch.nn.Module,
+        target_dir: str,
+) -> Tuple[Union[Module, LRScheduler, None], int]:
+    epoch = 0
     if not os.path.isdir(target_dir):
-        return None
+        return None, epoch
 
-    epoch = None
     for filename in os.listdir(target_dir):
         if filename.startswith('model-e'):
             epoch = get_model_epoch(filename)
 
     model = load_state(model, target_dir, f"model-e{epoch}")
-    return model, epoch if model and epoch else None
+    return (model if model and epoch else None), epoch
 
 
-def load_scheduler(scheduler: torch.optim.lr_scheduler, target_dir: str) -> Union[torch.optim.lr_scheduler, None]:
+def load_scheduler(scheduler: LRScheduler, target_dir: str) -> Union[LRScheduler, None]:
     if not os.path.isdir(target_dir):
         return None
     return load_state(scheduler, target_dir, "scheduler")

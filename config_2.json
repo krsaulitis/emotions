@@ -1,0 +1,38 @@
+[
+  {
+    "project_name": "emotion-bert-en",
+    "model_name": "emotion-bert-en",
+    "description": "Suggested parameters with AdamW smaller learning rate",
+    "data_dir": "data",
+    "data_lang": "en",
+    "base_model": "bert-base-cased",
+    "base_model_vocab": "bert-base-cased",
+    "optimizer": "AdamW",
+    "weight_decay": 0.05,
+    "warmup": 0.1,
+    "epochs": 6,
+    "batch_size": 16,
+    "max_len": 64,
+    "learning_rate": 2e-5,
+    "classifier_dropout": 0.1,
+    "seed": 42
+  },
+  {
+    "project_name": "emotion-bert-en",
+    "model_name": "emotion-bert-en",
+    "description": "Suggested parameters with AdamW smaller learning rate and increased batch size",
+    "data_dir": "data",
+    "data_lang": "en",
+    "base_model": "bert-base-cased",
+    "base_model_vocab": "bert-base-cased",
+    "optimizer": "AdamW",
+    "weight_decay": 0.05,
+    "warmup": 0.1,
+    "epochs": 6,
+    "batch_size": 32,
+    "max_len": 64,
+    "learning_rate": 2e-5,
+    "classifier_dropout": 0.1,
+    "seed": 42
+  }
+]
